@@ -100,34 +100,14 @@
                     </div>
                 </div>
 
-                  <div class="row mt-4" id="analysis-result" v-if="analysisResult">
-                    <div class="col-lg-12">
-                      <card class="border-0" shadow body-classes="p-4">
-                        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap">
-                          <h4 class="mb-0">評分結果</h4>
-                          <span class="badge badge-primary badge-pill px-3 py-2">總分 {{ analysisResult.total }}/100</span>
-                        </div>
-
-                        <div class="row mb-3">
-                          <div class="col-md-6 col-lg-3 mb-3" v-for="item in analysisResult.items" :key="item.key">
-                            <div class="score-item p-3 border rounded h-100">
-                              <small class="text-muted d-block mb-1">{{ item.label }}（{{ item.weightLabel }}）</small>
-                              <div class="h5 mb-1">原始分數：{{ item.score }} / 100</div>
-                              <small class="text-muted">加權得分：{{ item.weightedScore }}</small>
-                            </div>
-                          </div>
-                        </div>
-
-                        <h5 class="mb-2">建議</h5>
-                        <ul class="mb-0 pl-3">
-                          <li v-for="(tip, index) in analysisResult.suggestions" :key="`${index}-${tip}`" class="mb-1">
-                            {{ tip }}
-                          </li>
-                        </ul>
-                      </card>
-                    </div>
-                  </div>
-            </div>
+<div class="row mt-4" id="analysis-result" v-if="analysisResult">
+  <div class="col-lg-12">
+    <card class="border-0 shadow body-classes p-4">
+      <h4 class="mb-3">評分結果</h4>
+      <pre style="white-space: pre-wrap;">{{ analysisResult.raw }}</pre>
+    </card>
+  </div>
+</div>
         </section>
 
         <input
@@ -148,33 +128,52 @@ export default {
     return {
       selectedSubject: "",
       uploadedFiles: [],
-      analysisResult: null
+      analysisResult: null,
+      uploadedFilename: ""
     };
   },
   methods: {
     openFilePicker() {
       this.$refs.fileInput.click();
     },
-    handleFileChange(event) {
-      const files = Array.from(event.target.files || []);
-
-      // Release previous object URLs before replacing previews.
-      this.cleanupPreviewUrls();
-
-      this.uploadedFiles = files.map((file, index) => {
-        const isPdf = file.type === "application/pdf";
-        const isWord = file.type === "application/msword" || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || /\.(doc|docx)$/i.test(file.name);
-        const previewUrl = URL.createObjectURL(file);
-
-        return {
-          id: `${file.name}-${index}`,
-          name: file.name,
-          size: file.size,
-          kind: isPdf ? "pdf" : isWord ? "word" : "other",
-          previewUrl
-        };
-      });
-    },
+async handleFileChange(event) {
+  const files = Array.from(event.target.files || []);
+  this.cleanupPreviewUrls();
+  this.uploadedFiles = files.map((file, index) => {
+    const isPdf = file.type === "application/pdf";
+    const isWord =
+      file.type === "application/msword" ||
+      file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    const previewUrl = URL.createObjectURL(file);
+    return {
+      id: `${file.name}-${index}`,
+      name: file.name,
+      size: file.size,
+      kind: isPdf ? "pdf" : isWord ? "word" : "other",
+      previewUrl
+    };
+  });
+  if (!files.length) return;
+  try {
+    const formData = new FormData();
+    formData.append("file", files[0]); 
+    formData.append("subject", this.selectedSubject || "");
+    const res = await fetch("http://10.147.18.239:8000/upload", {
+      method: "POST",
+      body: formData
+    });
+    const data = await res.json();
+    if (data.success) {
+      this.uploadedFilename = data.filename;
+      console.log("上傳成功，後端檔名：", data.filename);
+    } else {
+      alert("檔案上傳失敗");
+    }
+  } catch (error) {
+    console.error("upload error:", error);
+    alert("上傳 API 呼叫失敗");
+  }
+},
     cleanupPreviewUrls() {
       this.uploadedFiles.forEach(file => {
         if (file.previewUrl) {
@@ -193,47 +192,54 @@ export default {
 
       return `${(size / (1024 * 1024)).toFixed(2)} MB`;
     },
-    generateAnalysis() {
-      const fileCount = this.uploadedFiles.length;
-      const hasSubject = this.selectedSubject !== "";
+async generateAnalysis() {
+  const fileCount = this.uploadedFiles.length;
+  const hasSubject = this.selectedSubject !== "";
 
-      if (!fileCount) {
-        alert("請先上傳至少一份試卷檔案。");
-        return;
-      }
+  if (!fileCount) {
+    alert("請先上傳至少一份試卷檔案。");
+    return;
+  }
 
-      if (!hasSubject) {
-        alert("請先選擇科目。");
-        return;
-      }
+  if (!hasSubject) {
+    alert("請先選擇科目。");
+    return;
+  }
 
-      const base = Math.min(88, 62 + fileCount * 4);
-      const subjectBonus = this.selectedSubject === "數學" || this.selectedSubject === "英文" ? 3 : 1;
+  if (!this.uploadedFilename) {
+    alert("尚未完成後端上傳，請重新選擇檔案。");
+    return;
+  }
 
-      const items = [
-        { key: "accuracy", label: "內容正確性", weight: 0.2, weightLabel: "20%", score: this.clamp(base + 8 + subjectBonus, 0, 100) },
-        { key: "logic", label: "組織邏輯", weight: 0.25, weightLabel: "25%", score: this.clamp(base + 4, 0, 100) },
-        { key: "critical", label: "個人批判性見解", weight: 0.25, weightLabel: "25%", score: this.clamp(base + 2, 0, 100) },
-        { key: "language", label: "語言表達", weight: 0.1, weightLabel: "10%", score: this.clamp(base - 3, 0, 100) },
-        { key: "creativity", label: "創意與視覺呈現", weight: 0.1, weightLabel: "10%", score: this.clamp(base - 2, 0, 100) },
-        { key: "citation", label: "參考文獻與 AI 使用聲明", weight: 0.1, weightLabel: "10%", score: this.clamp(base - 1, 0, 100) }
-      ];
+  try {
+    const res = await fetch("http://10.147.18.239:8000/grade", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        filename: this.uploadedFilename,
+        subject: this.selectedSubject,
+        model_name: "gemma3:12b"
+      })
+    });
 
-      const itemsWithWeightedScore = items.map(item => ({
-        ...item,
-        weightedScore: (item.score * item.weight).toFixed(1)
-      }));
+    const data = await res.json();
 
-      const total = Math.round(itemsWithWeightedScore.reduce((sum, item) => sum + Number(item.weightedScore), 0));
-
+    if (data.success) {
       this.analysisResult = {
-        total,
-        items: itemsWithWeightedScore,
-        suggestions: this.buildSuggestions(total)
+        raw: data.result
       };
 
       this.scrollToSection("analysis-result");
-    },
+    } else {
+      alert("批改失敗：" + (data.message || "未知錯誤"));
+    }
+  } catch (error) {
+    console.error("grade error:", error);
+    alert("批改 API 呼叫失敗");
+  }
+},
     buildSuggestions(total) {
       const tips = [];
 
