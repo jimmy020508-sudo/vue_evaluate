@@ -108,7 +108,8 @@
     </card>
   </div>
 </div>
-        </section>
+</div>
+</section>
 
         <input
             ref="fileInput"
