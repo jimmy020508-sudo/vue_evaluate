@@ -139,7 +139,8 @@
 
   <pre class="mb-0" style="white-space: pre-wrap;">{{ analysisResult }}</pre>
 </template>
-<div v-else class="text-center py-5">
+
+<div v-if="!selectedFile || !analysisResult" class="text-center py-5">
   <h4 class="mb-2">結果區已建立</h4>
   <p class="text-muted mb-0">請先點選上方任一份已上傳檔案，系統就會顯示該檔案的結果。</p>
 </div>
