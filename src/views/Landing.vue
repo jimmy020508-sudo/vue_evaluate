@@ -129,32 +129,20 @@
                   <div class="row mt-4" id="analysis-result" v-if="showResultSection">
                     <div class="col-lg-12">
                       <card class="border-0" shadow body-classes="p-4">
-                        <template v-if="selectedFile && analysisResult">
-                          <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap">
-                            <div>
-                              <h4 class="mb-1">評分結果</h4>
-                              <small class="text-muted">目前檔案：{{ selectedFile.name }}</small>
-                            </div>
-                            <span class="badge badge-primary badge-pill px-3 py-2">總分 {{ analysisResult.total }}/100</span>
-                          </div>
+<template v-if="selectedFile && analysisResult">
+  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap">
+    <div>
+      <h4 class="mb-1">評分結果</h4>
+      <small class="text-muted">目前檔案：{{ selectedFile.name }}</small>
+    </div>
+  </div>
 
-                          <div class="row mb-3">
-                            <div class="col-md-6 col-lg-3 mb-3" v-for="item in analysisResult.items" :key="item.key">
-                              <div class="score-item p-3 border rounded h-100">
-                                <small class="text-muted d-block mb-1">{{ item.label }}（{{ item.weightLabel }}）</small>
-                                <div class="h5 mb-1">原始分數：{{ item.score }} / 100</div>
-                                <small class="text-muted">加權得分：{{ item.weightedScore }}</small>
-                              </div>
-                            </div>
-                          </div>
-
-                          <h5 class="mb-2">建議</h5>
-                          <ul class="mb-0 pl-3">
-                            <li v-for="(tip, index) in analysisResult.suggestions" :key="`${index}-${tip}`" class="mb-1">
-                              {{ tip }}
-                            </li>
-                          </ul>
-                        </template>
+  <pre class="mb-0" style="white-space: pre-wrap;">{{ analysisResult }}</pre>
+</template>
+<div v-else class="text-center py-5">
+  <h4 class="mb-2">結果區已建立</h4>
+  <p class="text-muted mb-0">請先點選上方任一份已上傳檔案，系統就會顯示該檔案的結果。</p>
+</div>
 
                         <div v-else class="text-center py-5">
                           <h4 class="mb-2">結果區已建立</h4>
