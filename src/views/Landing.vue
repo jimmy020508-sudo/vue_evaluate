@@ -219,44 +219,77 @@ export default {
         this.$refs.fileInput.value = "";
       }
     },
-    handleFileChange(event) {
-      const files = Array.from(event.target.files || []);
-      this.clearPromptWarning();
-      const existingNames = new Set(this.uploadedFiles.map(file => file.name));
-      const duplicateNames = [];
+async handleFileChange(event) {
+  const files = Array.from(event.target.files || []);
+  const existingNames = new Set(this.uploadedFiles.map(file => file.name));
+  const duplicateNames = [];
+  const newUploadedFiles = [];
 
-      const newUploadedFiles = files.map((file, index) => {
-        const isPdf = file.type === "application/pdf";
-        const isWord = file.type === "application/msword" || file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || /\.(doc|docx)$/i.test(file.name);
-        const previewUrl = URL.createObjectURL(file);
+  for (const [index, file] of files.entries()) {
+    if (existingNames.has(file.name)) {
+      duplicateNames.push(file.name);
+      continue;
+    }
 
-        if (existingNames.has(file.name)) {
-          duplicateNames.push(file.name);
-          return null;
-        }
+    const isPdf = file.type === "application/pdf";
+    const isWord =
+      file.type === "application/msword" ||
+      file.type ===
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
-        existingNames.add(file.name);
+    const previewUrl = URL.createObjectURL(file);
 
-        return {
-          id: `${file.name}-${Date.now()}-${index}`,
-          name: file.name,
-          size: file.size,
-          kind: isPdf ? "pdf" : isWord ? "word" : "other",
-          prompt: "",
-          previewUrl
-        };
-      }).filter(Boolean);
+    newUploadedFiles.push({
+      id: `${file.name}-${Date.now()}-${index}`,
+      name: file.name,
+      size: file.size,
+      kind: isPdf ? "pdf" : isWord ? "word" : "other",
+      prompt: "",
+      uploadedFilename: "",
+      result: "",
+      previewUrl
+    });
 
-      this.uploadedFiles = [...this.uploadedFiles, ...newUploadedFiles];
+    existingNames.add(file.name);
+  }
 
-      if (duplicateNames.length > 0) {
-        this.triggerPromptWarning(`已略過重複檔名：${duplicateNames.join("、")}`);
+  this.uploadedFiles = [...this.uploadedFiles, ...newUploadedFiles];
+
+  for (const fileItem of newUploadedFiles) {
+    const originalFile = files.find(f => f.name === fileItem.name);
+    if (!originalFile) continue;
+
+    try {
+      const formData = new FormData();
+      formData.append("file", originalFile);
+      formData.append("subject", "");
+
+      const res = await fetch("http://10.147.18.239:8000/upload", {
+        method: "POST",
+        body: formData
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        fileItem.uploadedFilename = data.filename;
+        console.log("上傳成功，後端檔名：", data.filename);
+      } else {
+        console.error("upload fail:", data.message);
       }
+    } catch (error) {
+      console.error("upload error:", error);
+    }
+  }
 
-      if (this.$refs.fileInput) {
-        this.$refs.fileInput.value = "";
-      }
-    },
+  if (duplicateNames.length > 0) {
+    this.triggerPromptWarning(`已略過重複檔名：${duplicateNames.join("、")}`);
+  }
+
+  if (this.$refs.fileInput) {
+    this.$refs.fileInput.value = "";
+  }
+},
     cleanupPreviewUrls() {
       this.uploadedFiles.forEach(file => {
         if (file.previewUrl) {
@@ -282,32 +315,65 @@ export default {
       }
 
       this.selectedFileId = file.id;
-      this.analysisResult = this.buildFileAnalysis(file);
+      this.analysisResult = file.result || null;
     },
-    showResults() {
-      if (!this.canSubmitResults) {
-        this.triggerPromptWarning("請先為所有已上傳檔案填寫評分標準，才能提交結果。");
-        return;
+async showResults() {
+  if (!this.uploadedFiles.length) {
+    this.triggerPromptWarning("請先上傳至少一份檔案。");
+    return;
+  }
+
+  const hasEmptyPrompt = this.uploadedFiles.some(file => !file.prompt.trim());
+  if (hasEmptyPrompt) {
+    this.triggerPromptWarning("請先為所有已上傳檔案填寫評分標準，才能提交結果。");
+    return;
+  }
+
+  const hasNotUploaded = this.uploadedFiles.some(file => !file.uploadedFilename);
+  if (hasNotUploaded) {
+    this.triggerPromptWarning("仍有檔案尚未完成上傳，請稍後再試。");
+    return;
+  }
+
+  for (const file of this.uploadedFiles) {
+    try {
+      const res = await fetch("http://10.147.18.239:8000/grade", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          filename: file.uploadedFilename,
+          rubric: file.prompt,
+          model_name: "gemma3:12b"
+        })
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        file.result = data.result;
+      } else {
+        file.result = `批改失敗：${data.message || "未知錯誤"}`;
       }
+    } catch (error) {
+      console.error("grade error:", error);
+      file.result = "批改 API 呼叫失敗";
+    }
+  }
 
-      if (this.selectedFile && this.analysisResult) {
-        this.showResultSection = true;
-        this.scrollToSection("analysis-result");
-        return;
-      }
+  const firstReadyFile = this.uploadedFiles.find(file => file.result);
 
-      const firstReadyFile = this.uploadedFiles.find(file => file.prompt.trim().length > 0);
+  if (!firstReadyFile) {
+    this.triggerPromptWarning("目前沒有可顯示的批改結果。");
+    return;
+  }
 
-      if (!firstReadyFile) {
-        this.triggerPromptWarning("請先為至少一份檔案填寫評分標準，才能前往結果。");
-        return;
-      }
-
-      this.selectedFileId = firstReadyFile.id;
-      this.analysisResult = this.buildFileAnalysis(firstReadyFile);
-      this.showResultSection = true;
-      this.scrollToSection("analysis-result");
-    },
+  this.selectedFileId = firstReadyFile.id;
+  this.analysisResult = firstReadyFile.result;
+  this.showResultSection = true;
+  this.scrollToSection("analysis-result");
+},
     triggerPromptWarning(message) {
       this.promptWarning = message;
 
